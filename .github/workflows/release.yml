@@ -1,0 +1,95 @@
+name: Release iperf3-monitor
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  lint-and-test:
+    name: Lint and Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: v3.10.0
+
+      - name: Helm Lint
+        run: helm lint ./charts/iperf3-monitor
+
+  build-and-publish-image:
+    name: Build and Publish Docker Image
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./exporter
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  package-and-publish-chart:
+    name: Package and Publish Helm Chart
+    runs-on: ubuntu-latest
+    needs: build-and-publish-image
+    permissions:
+      contents: write # Needed by stefanprodan/helm-gh-pages to push to gh-pages branch
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # Fetch all history for helm-gh-pages to calculate chart index
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: v3.10.0
+
+      - name: Install yq
+        run: |
+          sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq &&\
+          sudo chmod +x /usr/bin/yq
+
+      - name: Set Chart Version from Tag
+        run: |
+          VERSION=$(echo "${{ github.ref_name }}" | sed 's/^v//')
+          yq e -i '.version = strenv(VERSION)' ./charts/iperf3-monitor/Chart.yaml
+          yq e -i '.appVersion = strenv(VERSION)' ./charts/iperf3-monitor/Chart.yaml
+          cat ./charts/iperf3-monitor/Chart.yaml # Optional: print updated Chart.yaml
+
+      - name: Publish Helm chart
+        uses: stefanprodan/helm-gh-pages@v1.6.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          charts_dir: ./charts
+          charts_url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+```

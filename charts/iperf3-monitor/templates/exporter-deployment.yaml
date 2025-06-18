@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "iperf3-monitor.fullname" . }}-exporter
+  labels:
+    {{- include "iperf3-monitor.labels" . | nindent 4 }}
+    app.kubernetes.io/component: exporter
+spec:
+  replicas: {{ .Values.exporter.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "iperf3-monitor.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: exporter
+  template:
+    metadata:
+      labels:
+        {{- include "iperf3-monitor.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: exporter
+    spec:
+      serviceAccountName: {{ include "iperf3-monitor.serviceAccountName" . }}
+      containers:
+      - name: iperf3-exporter
+        image: "{{ .Values.exporter.image.repository }}:{{ .Values.exporter.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.exporter.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.service.targetPort }}
+          name: metrics
+        env:
+        - name: SOURCE_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: IPERF_TEST_INTERVAL
+          value: "{{ .Values.exporter.testInterval }}"
+        - name: IPERF_TEST_PROTOCOL
+          value: "{{ .Values.exporter.testProtocol }}"
+        - name: IPERF_SERVER_PORT
+          value: "5201" # Hardcoded as per server DaemonSet
+        - name: IPERF_SERVER_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: IPERF_SERVER_LABEL_SELECTOR
+          value: "app.kubernetes.io/name={{ include \"iperf3-monitor.name\" . }},app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=server"
+        {{- with .Values.exporter.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+```

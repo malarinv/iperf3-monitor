@@ -1,0 +1,40 @@
+```
+# Byte-code files
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+
+# Distribution / build outputs
+dist/
+build/
+*.egg-info/
+.tox/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Editor/IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs and temporary files
+*.log
+*.tmp
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Docker
+!Dockerfile
+.dockerignore
+
+# Helm
+!charts/iperf3-monitor/.helmignore
+charts/*.tgz # Ignore packaged chart files
+```
