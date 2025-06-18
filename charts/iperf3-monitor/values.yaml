@@ -1,0 +1,120 @@
+# Default values for iperf3-monitor.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# -- Override the name of the chart.
+nameOverride: ""
+
+# -- Override the fully qualified app name.
+fullnameOverride: ""
+
+exporter:
+  # -- Configuration for the exporter container image.
+  image:
+    # -- The container image repository for the exporter.
+    repository: ghcr.io/malarinv/iperf3-prometheus-exporter # Replace with your repo URL
+    # -- The container image tag for the exporter. If not set, the chart's appVersion is used.
+    tag: ""
+    # -- The image pull policy for the exporter container.
+    pullPolicy: IfNotPresent
+
+  # -- Number of exporter pod replicas. Typically 1 is sufficient.
+  replicaCount: 1
+
+  # -- Interval in seconds between complete test cycles (i.e., testing all server nodes).
+  testInterval: 300
+
+  # -- Timeout in seconds for a single iperf3 test run.
+  testTimeout: 10
+
+  # -- Protocol to use for testing (tcp or udp).
+  testProtocol: tcp
+
+  # -- CPU and memory resource requests and limits for the exporter pod.
+  # @default -- A small default is provided if commented out.
+  resources:
+    {}
+    # requests:
+    #   cpu: "100m"
+    #   memory: "128Mi"
+    # limits:
+    #   cpu: "500m"
+    #   memory: "256Mi"
+
+server:
+  # -- Configuration for the iperf3 server container image (DaemonSet).
+  image:
+    # -- The container image repository for the iperf3 server.
+    repository: networkstatic/iperf3
+    # -- The container image tag for the iperf3 server.
+    tag: latest
+
+  # -- CPU and memory resource requests and limits for the iperf3 server pods (DaemonSet).
+  # These should be very low as the server is mostly idle.
+  # @default -- A small default is provided if commented out.
+  resources:
+    {}
+    # requests:
+    #   cpu: "50m"
+    #   memory: "64Mi"
+    # limits:
+    #   cpu: "100m"
+    #   memory: "128Mi"
+
+  # -- Node selector for scheduling iperf3 server pods.
+  # Use this to restrict the DaemonSet to a subset of nodes.
+  # @default -- {} (schedule on all nodes)
+  nodeSelector: {}
+
+  # -- Tolerations for scheduling iperf3 server pods on tainted nodes (e.g., control-plane nodes).
+  # This is often necessary to include master nodes in the test mesh.
+  # @default -- Tolerates control-plane and master taints.
+  tolerations:
+    - key: "node-role.kubernetes.io/control-plane"
+      operator: "Exists"
+      effect: "NoSchedule"
+    - key: "node-role.kubernetes.io/master"
+      operator: "Exists"
+      effect: "NoSchedule"
+
+rbac:
+  # -- If true, create ServiceAccount, ClusterRole, and ClusterRoleBinding for the exporter.
+  # Set to false if you manage RBAC externally.
+  create: true
+
+serviceAccount:
+  # -- The name of the ServiceAccount to use for the exporter pod.
+  # Only used if rbac.create is false. If not set, it defaults to the chart's fullname.
+  name: ""
+
+serviceMonitor:
+  # -- If true, create a ServiceMonitor resource for integration with Prometheus Operator.
+  # Requires a running Prometheus Operator in the cluster.
+  enabled: true
+
+  # -- Scrape interval for the ServiceMonitor. How often Prometheus scrapes the exporter metrics.
+  interval: 60s
+
+  # -- Scrape timeout for the ServiceMonitor. How long Prometheus waits for metrics response.
+  scrapeTimeout: 30s
+
+# -- Configuration for the exporter Service.
+service:
+  # -- Service type. ClusterIP is typically sufficient.
+  type: ClusterIP
+  # -- Port on which the exporter service is exposed.
+  port: 9876
+  # -- Target port on the exporter pod.
+  targetPort: 9876
+
+# -- Optional configuration for a network policy to allow traffic to the iperf3 server DaemonSet.
+# This is often necessary if you are using a network policy controller.
+networkPolicy:
+  # -- If true, create a NetworkPolicy resource.
+  enabled: false
+  # -- Specify source selectors if needed (e.g., pods in a specific namespace).
+  from: []
+  # -- Specify namespace selectors if needed.
+  namespaceSelector: {}
+  # -- Specify pod selectors if needed.
+  podSelector: {}

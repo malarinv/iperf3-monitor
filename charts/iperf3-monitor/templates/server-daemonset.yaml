@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "iperf3-monitor.fullname" . }}-server
+  labels:
+    {{- include "iperf3-monitor.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  selector:
+    matchLabels:
+      {{- include "iperf3-monitor.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      labels:
+        {{- include "iperf3-monitor.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: server
+    spec:
+      # Run on the host network to measure raw node-to-node performance
+      hostNetwork: true
+      {{- with .Values.server.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: iperf3-server
+          image: "{{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}"
+          imagePullPolicy: {{ .Values.server.image.pullPolicy }}
+          args: ["-s"] # Start in server mode
+          ports:
+            - containerPort: 5201
+              name: iperf3-tcp
+              protocol: TCP
+            - containerPort: 5201
+              name: iperf3-udp
+              protocol: UDP
+          {{- with .Values.server.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+```
