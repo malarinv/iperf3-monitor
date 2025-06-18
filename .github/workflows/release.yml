@@ -3,7 +3,7 @@ name: Release iperf3-monitor
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - "v*.*.*"
 
 env:
   REGISTRY: ghcr.io
@@ -92,4 +92,3 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           charts_dir: ./charts
           charts_url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
-```

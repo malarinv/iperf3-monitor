@@ -157,3 +157,4 @@ def parse_and_publish_metrics(result, source_node, dest_node, protocol):
              IPERF_PACKETS_TOTAL.labels(**labels).set(0)
              IPERF_LOST_PACKETS.labels(**labels).set(0)
         except KeyError:
+            pass
