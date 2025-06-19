@@ -46,3 +46,4 @@ spec:
         resources:
           {{- toYaml . | nindent 10 }}
         {{- end }}
+```
