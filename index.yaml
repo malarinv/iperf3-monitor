@@ -1,0 +1,39 @@
+apiVersion: v1
+entries:
+  iperf3-monitor:
+  - annotations:
+      artifacthub.io/category: networking
+      artifacthub.io/changes: |
+        - Add initial Helm chart structure.
+    apiVersion: v2
+    appVersion: 0.1.1
+    created: "2025-06-19T21:43:47.560731092Z"
+    dependencies:
+    - condition: serviceMonitor.enabled
+      name: kube-prometheus-stack
+      repository: https://prometheus-community.github.io/helm-charts
+      version: '>=30.0.0'
+    description: A Helm chart for deploying a Kubernetes-native iperf3 network performance
+      monitoring service with Prometheus and Grafana.
+    digest: e334d11e50f6303486830cc1384bfe21eecfe803f665868eaeb294d5ef168559
+    home: https://github.com/malarinv/iperf3-monitor
+    icon: https://raw.githubusercontent.com/malarinv/iperf3-monitor/main/icon.png
+    keywords:
+    - iperf3
+    - network
+    - performance
+    - monitoring
+    - kubernetes
+    - prometheus
+    - grafana
+    maintainers:
+    - email: malarkannan.invention@gmail.com
+      name: Malar Invention
+    name: iperf3-monitor
+    sources:
+    - https://github.com/malarinv/iperf3-monitor
+    type: application
+    urls:
+    - https://malarinv.github.io/iperf3-monitor/iperf3-monitor-0.1.1.tgz
+    version: 0.1.1
+generated: "2025-06-19T21:43:47.52989165Z"
