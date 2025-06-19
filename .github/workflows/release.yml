@@ -82,8 +82,8 @@ jobs:
       - name: Set Chart Version from Tag
         run: |
           VERSION=$(echo "${{ github.ref_name }}" | sed 's/^v//')
-          yq e -i '.version = strenv(VERSION)' ./charts/iperf3-monitor/Chart.yaml
-          yq e -i '.appVersion = strenv(VERSION)' ./charts/iperf3-monitor/Chart.yaml
+          VERSION=$VERSION yq e -i '.version = strenv(VERSION)' ./charts/iperf3-monitor/Chart.yaml
+          VERSION=$VERSION yq e -i '.appVersion = strenv(VERSION)' ./charts/iperf3-monitor/Chart.yaml
           cat ./charts/iperf3-monitor/Chart.yaml # Optional: print updated Chart.yaml
 
       - name: Publish Helm chart
