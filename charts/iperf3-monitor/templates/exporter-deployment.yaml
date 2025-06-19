@@ -41,7 +41,7 @@ spec:
             fieldRef:
               fieldPath: metadata.namespace
         - name: IPERF_SERVER_LABEL_SELECTOR
-          value: "app.kubernetes.io/name={{ include \"iperf3-monitor.name\" . }},app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=server"
+          value: 'app.kubernetes.io/name={{ include "iperf3-monitor.name" . }},app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=server'
         {{- with .Values.exporter.resources }}
         resources:
           {{- toYaml . | nindent 10 }}

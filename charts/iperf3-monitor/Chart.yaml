@@ -24,7 +24,7 @@ annotations:
     - Add initial Helm chart structure.
   artifacthub.io/category: networking
 dependencies:
-  - name: prometheus-community/kube-prometheus-stack # Example dependency if you package the whole stack
+  - name: kube-prometheus-stack # Example dependency if you package the whole stack
     version: ">=30.0.0" # Specify a compatible version range
     repository: https://prometheus-community.github.io/helm-charts
     condition: serviceMonitor.enabled # Only include if ServiceMonitor is enabled (assuming Prometheus Operator)
