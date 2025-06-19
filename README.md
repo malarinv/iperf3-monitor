@@ -37,7 +37,7 @@ This separation of concerns ensures scalability, resilience, and aligns with Kub
 1.  Add the Helm chart repository (replace with your actual repo URL once published):
 
     ```/dev/null/helm-install.sh#L1-1
-    helm repo add iperf3-monitor https://your-github-org.github.io/iperf3-monitor/
+    helm repo add iperf3-monitor https://malarinv.github.io/iperf3-monitor/
     ```
 
 2.  Update your Helm repositories:
@@ -78,7 +78,7 @@ exporter:
   # -- Configuration for the exporter container image.
   image:
     # -- The container image repository for the exporter.
-    repository: ghcr.io/my-org/iperf3-prometheus-exporter # Replace with your repo URL
+    repository: ghcr.io/malarinv/iperf3-monitor
     # -- The container image tag for the exporter. If not set, the chart's appVersion is used.
     tag: ""
     # -- The image pull policy for the exporter container.
@@ -430,8 +430,4 @@ The project includes a GitHub Actions workflow (`.github/workflows/release.yml`)
 
 ## License
 
-This project is licensed under the terms defined in the `LICENSE` file.
-
-```iperf3-monitor/LICENSE
-This project is currently unlicensed. Please see the project's documentation or repository for licensing information when it becomes available.
-```
+This project is licensed under the GNU Affero General Public License v3. See the `LICENSE` file for details.

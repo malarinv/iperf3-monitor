@@ -12,7 +12,7 @@ exporter:
   # -- Configuration for the exporter container image.
   image:
     # -- The container image repository for the exporter.
-    repository: ghcr.io/malarinv/iperf3-prometheus-exporter # Replace with your repo URL
+    repository: ghcr.io/malarinv/iperf3-monitor
     # -- The container image tag for the exporter. If not set, the chart's appVersion is used.
     tag: ""
     # -- The image pull policy for the exporter container.
