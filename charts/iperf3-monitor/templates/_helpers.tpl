@@ -29,9 +29,9 @@ Create chart's labels
 {{- define "iperf3-monitor.labels" -}}
 helm.sh/chart: {{ include "iperf3-monitor.name" . }}-{{ .Chart.Version | replace "+" "_" }}
 {{ include "iperf3-monitor.selectorLabels" . }}
-{{- if .Chart.AppVersion -}}
+{{ if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-{{- end -}}
+{{ end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 
@@ -41,7 +41,7 @@ Selector labels
 {{- define "iperf3-monitor.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "iperf3-monitor.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
-{{- end -}}
+{{ end }}
 
 {{/*
 Create the name of the service account to use
