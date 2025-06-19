@@ -12,12 +12,12 @@ keywords:
   - kubernetes
   - prometheus
   - grafana
-home: https://github.com/malarinv/iperf3-monitor # Replace with your repo URL
+home: https://github.com/malarinv/iperf3-monitor
 sources:
-  - https://github.com/malarinv/iperf3-monitor # Replace with your repo URL
+  - https://github.com/malarinv/iperf3-monitor
 maintainers:
-  - name: Malar Invention # Replace with your name
-    email: malarkannan.invention@gmail.com # Replace with your email
+  - name: Malar Invention
+    email: malarkannan.invention@gmail.com
 icon: https://raw.githubusercontent.com/malarinv/iperf3-monitor/main/icon.png # Optional icon URL
 annotations:
   artifacthub.io/changes: |
