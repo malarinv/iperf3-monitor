@@ -2,5 +2,8 @@ dependencies:
 - name: kube-prometheus-stack
   repository: https://prometheus-community.github.io/helm-charts
   version: 75.3.6
-digest: sha256:d15acd48bfc0b842654ae025e1bd1969e636a66508020312d555db84f381c379
-generated: "2025-06-19T20:40:53.415529365Z"
+- name: prometheus-operator
+  repository: oci://tccr.io/truecharts
+  version: 11.5.1
+digest: sha256:3000e63445f8ba8df601cb483f4f77d14c5c4662bff2d16ffcf5cf1f7def314b
+generated: "2025-06-20T17:25:44.538372209+05:30"

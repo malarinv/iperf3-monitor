@@ -36,4 +36,4 @@ Thumbs.db
 
 # Helm
 !charts/iperf3-monitor/.helmignore
-charts/*.tgz # Ignore packaged chart files
+charts/iperf3-monitor/charts/
