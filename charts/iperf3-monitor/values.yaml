@@ -118,3 +118,20 @@ networkPolicy:
   namespaceSelector: {}
   # -- Specify pod selectors if needed.
   podSelector: {}
+
+# -----------------------------------------------------------------------------
+# Dependency Configuration
+# -----------------------------------------------------------------------------
+dependencies:
+  # -- Set to true to use the TrueCharts Prometheus Operator instead of kube-prometheus-stack.
+  # This chart's ServiceMonitor resources require a Prometheus Operator to be functional.
+  # If serviceMonitor.enabled is true, one of these two dependencies will be pulled based on this flag.
+  useTrueChartsPrometheusOperator: false
+
+  # -- Repository for the TrueCharts Prometheus Operator.
+  # Only used if dependencies.useTrueChartsPrometheusOperator is true.
+  trueChartsPrometheusOperatorRepository: "oci://tccr.io/truecharts"
+
+  # -- Chart version for the TrueCharts Prometheus Operator.
+  # Only used if dependencies.useTrueChartsPrometheusOperator is true.
+  trueChartsPrometheusOperatorVersion: "8.11.1"
