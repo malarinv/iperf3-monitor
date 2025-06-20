@@ -123,7 +123,14 @@ networkPolicy:
 # Dependency Configuration
 # -----------------------------------------------------------------------------
 dependencies:
+  # -- Set to true to install Prometheus operator dependency if serviceMonitor.enabled is also true.
+  # -- Set to false to disable the installation of Prometheus operator dependency,
+  # -- regardless of serviceMonitor.enabled. This is useful if you have Prometheus
+  # -- Operator installed and managed separately in your cluster.
+  install: true
+
   # -- Set to true to use the TrueCharts Prometheus Operator instead of kube-prometheus-stack.
   # This chart's ServiceMonitor resources require a Prometheus Operator to be functional.
-  # If serviceMonitor.enabled is true, one of these two dependencies will be pulled based on this flag.
+  # If serviceMonitor.enabled is true and dependencies.install is true,
+  # one of these two dependencies will be pulled based on this flag.
   useTrueChartsPrometheusOperator: false
