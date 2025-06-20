@@ -29,6 +29,6 @@ dependencies:
     repository: https://prometheus-community.github.io/helm-charts
     condition: "serviceMonitor.enabled, !dependencies.useTrueChartsPrometheusOperator"
   - name: prometheus-operator
-    version: ">={{ dependencies.trueChartsPrometheusOperatorVersion }}"
-    repository: "{{ dependencies.trueChartsPrometheusOperatorRepository }}"
+    version: ">=8.11.1"
+    repository: "oci://tccr.io/truecharts"
     condition: "serviceMonitor.enabled, dependencies.useTrueChartsPrometheusOperator"
