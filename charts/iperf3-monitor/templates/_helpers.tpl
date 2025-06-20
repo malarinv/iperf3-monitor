@@ -47,7 +47,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 Create the name of the service account to use
 */}}
 {{- define "iperf3-monitor.serviceAccountName" -}}
-{{- if .Values.serviceAccount.create -}}
+{{- if .Values.rbac.create -}}
     {{- default (include "iperf3-monitor.fullname" .) .Values.serviceAccount.name -}}
 {{- else -}}
     {{- default "default" .Values.serviceAccount.name -}}
