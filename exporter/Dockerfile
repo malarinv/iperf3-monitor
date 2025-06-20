@@ -5,24 +5,12 @@ FROM python:3.9-slim as builder
 ARG TARGETARCH
 WORKDIR /app
 
-# Install iperf3 and build dependencies
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc iperf3 libiperf-dev && \
+# Minimal dependencies for builder stage if any Python packages had C extensions.
+# Assuming requirements.txt does not need gcc or other build tools for now.
+# If pip install fails later, add necessary build tools (e.g., gcc, python3-dev) here.
+RUN apt-get update &&
+    # apt-get install -y --no-install-recommends gcc python3-dev # Example if needed
     rm -rf /var/lib/apt/lists/*
-
-# Determine the correct libiperf source directory based on TARGETARCH
-# and copy libiperf.so.0 to a canonical temporary location /tmp/lib/ within the builder stage.
-RUN echo "Builder stage TARGETARCH: ${TARGETARCH}" && \
-    LIBIPERF_SRC_DIR_SEGMENT="" && \
-    if [ "${TARGETARCH}" = "amd64" ]; then \
-        LIBIPERF_SRC_DIR_SEGMENT="x86_64-linux-gnu"; \
-    elif [ "${TARGETARCH}" = "arm64" ]; then \
-        LIBIPERF_SRC_DIR_SEGMENT="aarch64-linux-gnu"; \
-    else \
-        echo "Unsupported TARGETARCH in builder: ${TARGETARCH}" && exit 1; \
-    fi && \
-    mkdir -p /tmp/lib && \
-    cp "/usr/lib/${LIBIPERF_SRC_DIR_SEGMENT}/libiperf.so.0" /tmp/lib/libiperf.so.0
 
 # Install Python dependencies
 COPY requirements.txt .
@@ -33,11 +21,11 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-# Copy iperf3 binary from the builder stage
-COPY --from=builder /usr/bin/iperf3 /usr/bin/iperf3
-# Copy the prepared libiperf.so.0 from the builder's canonical temporary location
-# into a standard library path in the final image.
-COPY --from=builder /tmp/lib/libiperf.so.0 /usr/lib/libiperf.so.0
+# Install iperf3 and its runtime dependency libsctp1 directly in the final stage.
+# This simplifies the Dockerfile by removing the need to copy iperf3 components from the builder.
+RUN apt-get update &&
+    apt-get install -y --no-install-recommends iperf3 libsctp1 &&
+    rm -rf /var/lib/apt/lists/*
 
 # Copy installed Python packages from the builder stage
 COPY --from=builder /usr/local/lib/python3.9/site-packages /usr/local/lib/python3.9/site-packages
