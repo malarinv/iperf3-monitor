@@ -24,6 +24,9 @@ exporter:
   # -- Interval in seconds between complete test cycles (i.e., testing all server nodes).
   testInterval: 300
 
+  # -- Log level for the iperf3 exporter (e.g., DEBUG, INFO, WARNING, ERROR, CRITICAL).
+  logLevel: INFO
+
   # -- Timeout in seconds for a single iperf3 test run.
   testTimeout: 10
 
