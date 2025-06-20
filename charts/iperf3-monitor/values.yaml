@@ -85,7 +85,7 @@ rbac:
 serviceAccount:
   # -- The name of the ServiceAccount to use for the exporter pod.
   # Only used if rbac.create is false. If not set, it defaults to the chart's fullname.
-  name: ""
+  name: "iperf3-monitor"
 
 serviceMonitor:
   # -- If true, create a ServiceMonitor resource for integration with Prometheus Operator.
