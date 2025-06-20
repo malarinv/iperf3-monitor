@@ -27,6 +27,9 @@ jobs:
   build:
     name: Build Docker Image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # Needed to checkout the repository
+      packages: write # Needed to push Docker images to GHCR
     steps:
       - name: Check out code
         uses: actions/checkout@v3
@@ -42,12 +45,28 @@ jobs:
         uses: docker/metadata-action@v4
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            # Tag with the PR number if it's a pull request event
+            type=match,pattern=pull_request,value=pr-{{number}}
+            # Tag with the git SHA
+            type=sha,prefix=
+            # Tag with 'latest' if on the main branch (though this workflow only runs on PRs to main)
+            type=ref,event=branch,pattern=main,value=latest
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Docker image
         uses: docker/build-push-action@v4
         with:
           context: ./exporter
-          push: false # Do not push on PRs
+          # Push the image if the event is a pull request.
+          # The workflow currently only triggers on pull_request events.
+          push: ${{ github.event_name == 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
