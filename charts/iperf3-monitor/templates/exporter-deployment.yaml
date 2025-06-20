@@ -20,7 +20,7 @@ spec:
       serviceAccountName: {{ include "iperf3-monitor.serviceAccountName" . }}
       containers:
       - name: iperf3-exporter
-        image: "{{ .Values.exporter.image.repository }}:{{ .Values.exporter.image.tag | default .Chart.AppVersion }}"
+        image: "{{ .Values.exporter.image.repository }}:{{ .Values.exporter.image.tag | default (printf "v%s" .Chart.AppVersion) }}"
         imagePullPolicy: {{ .Values.exporter.image.pullPolicy }}
         ports:
         - containerPort: {{ .Values.service.targetPort }}
