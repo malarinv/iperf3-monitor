@@ -36,6 +36,9 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v3
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v2
         with:
@@ -56,6 +59,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
 
   package-and-publish-chart:
     name: Package and Publish Helm Chart

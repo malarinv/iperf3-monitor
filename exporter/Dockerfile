@@ -17,9 +17,12 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
+# Declare TARGETARCH arg to be used in COPY instruction
+ARG TARGETARCH
+
 # Copy iperf3 binary and library from the builder stage
 COPY --from=builder /usr/bin/iperf3 /usr/bin/iperf3
-COPY --from=builder /usr/lib/x86_64-linux-gnu/libiperf.so.0 /usr/lib/x86_64-linux-gnu/libiperf.so.0
+COPY --from=builder /usr/lib/${TARGETARCH}-linux-gnu/libiperf.so.0 /usr/lib/${TARGETARCH}-linux-gnu/libiperf.so.0
 
 # Copy installed Python packages from the builder stage
 COPY --from=builder /usr/local/lib/python3.9/site-packages /usr/local/lib/python3.9/site-packages
