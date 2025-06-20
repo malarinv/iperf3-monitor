@@ -27,8 +27,8 @@ dependencies:
   - name: kube-prometheus-stack # Example dependency if you package the whole stack
     version: ">=30.0.0" # Specify a compatible version range
     repository: https://prometheus-community.github.io/helm-charts
-    condition: "serviceMonitor.enabled, !dependencies.useTrueChartsPrometheusOperator"
+    condition: "dependencies.install, serviceMonitor.enabled, !dependencies.useTrueChartsPrometheusOperator"
   - name: prometheus-operator
     version: ">=8.11.1"
     repository: "oci://tccr.io/truecharts"
-    condition: "serviceMonitor.enabled, dependencies.useTrueChartsPrometheusOperator"
+    condition: "dependencies.install, serviceMonitor.enabled, dependencies.useTrueChartsPrometheusOperator"
