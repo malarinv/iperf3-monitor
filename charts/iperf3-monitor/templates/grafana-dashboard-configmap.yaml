@@ -5,7 +5,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app.kubernetes.io/name: {{ include "iperf3-monitor.name" . }}
-    helm.sh/chart: {{ include "iperf3-monitor.chart" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
 data:
