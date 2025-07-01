@@ -8,42 +8,112 @@ nameOverride: ""
 # -- Override the fully qualified app name.
 fullnameOverride: ""
 
-exporter:
-  # -- Configuration for the exporter container image.
-  image:
-    # -- The container image repository for the exporter.
-    repository: ghcr.io/malarinv/iperf3-monitor
-    # -- The container image tag for the exporter. If not set, the chart's appVersion is used.
-    tag: ""
-    # -- The image pull policy for the exporter container.
-    pullPolicy: IfNotPresent
+controllers:
+  exporter:
+    # -- Enable the exporter controller.
+    enabled: true
+    # -- Set the controller type for the exporter.
+    # Valid options are "deployment" or "daemonset".
+    # @default -- "deployment"
+    type: deployment
+    # -- Number of desired exporter pods. Only used if type is "deployment".
+    # @default -- 1
+    replicas: 1
 
-  # -- Number of exporter pod replicas. Typically 1 is sufficient.
-  replicaCount: 1
+    # -- Application-specific configuration for the iperf3 exporter.
+    # These values are used to populate environment variables for the exporter container.
+    appConfig:
+      # -- Interval in seconds between complete test cycles (i.e., testing all server nodes).
+      testInterval: 300
+      # -- Log level for the iperf3 exporter (e.g., DEBUG, INFO, WARNING, ERROR, CRITICAL).
+      logLevel: INFO
+      # -- Timeout in seconds for a single iperf3 test run.
+      testTimeout: 10
+      # -- Protocol to use for testing (tcp or udp).
+      testProtocol: tcp
+      # -- iperf3 server port to connect to. Should match the server's listening port.
+      # @default -- "5201" (hardcoded in the original chart for server daemonset)
+      serverPort: "5201"
+      # -- Label selector to find iperf3 server pods.
+      # This will be templated in the actual deployment.
+      # Example default (if not overridden by template logic): 'app.kubernetes.io/component=server'
+      serverLabelSelector: 'app.kubernetes.io/name={{ include "iperf3-monitor.name" . }},app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=server'
 
-  # -- Interval in seconds between complete test cycles (i.e., testing all server nodes).
-  testInterval: 300
 
-  # -- Log level for the iperf3 exporter (e.g., DEBUG, INFO, WARNING, ERROR, CRITICAL).
-  logLevel: INFO
+    # -- Pod-level configurations for the exporter, leveraging bjw-s common library structure.
+    pod:
+      # -- Annotations for the exporter pod.
+      annotations: {}
+      # -- Labels for the exporter pod.
+      labels: {} # The common library will add its own default labels.
+      # -- Node selector for scheduling exporter pods.
+      nodeSelector: {}
+      # -- Tolerations for scheduling exporter pods.
+      tolerations: []
+      # -- Affinity rules for scheduling exporter pods.
+      affinity: {}
+      # -- Security context for the exporter pod.
+      securityContext: {}
+        # fsGroup: 65534
+        # runAsUser: 65534
+        # runAsGroup: 65534
+        # runAsNonRoot: true
+      # -- Automount service account token for the pod.
+      automountServiceAccountToken: true # Default from common lib
 
-  # -- Timeout in seconds for a single iperf3 test run.
-  testTimeout: 10
+    # -- Container-level configurations for the main exporter container.
+    containers:
+      exporter: # This is the primary container, name it 'exporter'
+        image:
+          # -- The container image repository for the exporter.
+          repository: ghcr.io/malarinv/iperf3-monitor
+          # -- The container image tag for the exporter. If not set, the chart's appVersion is used.
+          tag: "" # Defaults to .Chart.AppVersion via common library
+          # -- The image pull policy for the exporter container.
+          pullPolicy: IfNotPresent
 
-  # -- Protocol to use for testing (tcp or udp).
-  testProtocol: tcp
+        # -- Environment variables for the exporter container.
+        # The actual env map will be constructed in the main chart template
+        # and passed to the common library. This section is for user overrides
+        # if they want to directly set other env vars using common lib's env schema.
+        env: {}
+          # Example:
+          # MY_CUSTOM_VAR: "my_value"
+          # ANOTHER_VAR:
+          #   valueFrom:
+          #     secretKeyRef:
+          #       name: mysecret
+          #       key: mykey
 
-  # -- CPU and memory resource requests and limits for the exporter pod.
-  # @default -- A small default is provided if commented out.
-  resources:
-    {}
-    # requests:
-    #   cpu: "100m"
-    #   memory: "128Mi"
-    # limits:
-    #   cpu: "500m"
-    #   memory: "256Mi"
+        # -- Ports for the exporter container.
+        ports:
+          metrics: # Name of the port, will be used in Service definition
+            # -- Port number for the metrics endpoint on the container.
+            port: 9876 # Default, should match service.targetPort
+            # -- Protocol for the metrics port.
+            protocol: TCP # Common library defaults to TCP if not specified.
+            enabled: true # This port is enabled
 
+        # -- CPU and memory resource requests and limits for the exporter container.
+        resources:
+          {}
+          # requests:
+          #   cpu: "100m"
+          #   memory: "128Mi"
+          # limits:
+          #   cpu: "500m"
+          #   memory: "256Mi"
+
+        # -- Probes configuration for the exporter container.
+        probes:
+          liveness:
+            enabled: false
+          readiness:
+            enabled: false
+          startup:
+            enabled: false
+
+# Server configuration (iperf3 server daemonset)
 server:
   # -- Configuration for the iperf3 server container image (DaemonSet).
   image:
@@ -53,8 +123,6 @@ server:
     tag: latest
 
   # -- CPU and memory resource requests and limits for the iperf3 server pods (DaemonSet).
-  # These should be very low as the server is mostly idle.
-  # @default -- A small default is provided if commented out.
   resources:
     {}
     # requests:
@@ -65,13 +133,9 @@ server:
     #   memory: "128Mi"
 
   # -- Node selector for scheduling iperf3 server pods.
-  # Use this to restrict the DaemonSet to a subset of nodes.
-  # @default -- {} (schedule on all nodes)
   nodeSelector: {}
 
-  # -- Tolerations for scheduling iperf3 server pods on tainted nodes (e.g., control-plane nodes).
-  # This is often necessary to include master nodes in the test mesh.
-  # @default -- Tolerates control-plane and master taints.
+  # -- Tolerations for scheduling iperf3 server pods on tainted nodes.
   tolerations:
     - key: "node-role.kubernetes.io/control-plane"
       operator: "Exists"
@@ -80,60 +144,61 @@ server:
       operator: "Exists"
       effect: "NoSchedule"
 
+# RBAC and ServiceAccount settings
+# These are for the exporter. The exporter deployment (managed by common library)
+# will need to use the ServiceAccount specified here or one created by the library.
 rbac:
   # -- If true, create ServiceAccount, ClusterRole, and ClusterRoleBinding for the exporter.
-  # Set to false if you manage RBAC externally.
   create: true
 
 serviceAccount:
-  # -- The name of the ServiceAccount to use for the exporter pod.
-  # Only used if rbac.create is false. If not set, it defaults to the chart's fullname.
+  # -- The name of the ServiceAccount to use/create for the exporter pod.
+  # If rbac.create is true, this SA is created. The exporter pod must use this SA.
   name: "iperf3-monitor"
 
+# Service Monitor configuration for Prometheus
 serviceMonitor:
-  # -- If true, create a ServiceMonitor resource for integration with Prometheus Operator.
-  # Requires a running Prometheus Operator in the cluster.
+  # -- If true, create a ServiceMonitor resource.
   enabled: true
-
-  # -- Scrape interval for the ServiceMonitor. How often Prometheus scrapes the exporter metrics.
+  # -- Scrape interval for the ServiceMonitor.
   interval: 60s
-
-  # -- Scrape timeout for the ServiceMonitor. How long Prometheus waits for metrics response.
+  # -- Scrape timeout for the ServiceMonitor.
   scrapeTimeout: 30s
 
-# -- Configuration for the exporter Service.
+# Service configuration for the exporter
+# This defines how the exporter is exposed.
+# The common library can also manage services, or we can use our own template.
+# This structure is compatible with bjw-s common library's service management if we choose to use it.
 service:
-  # -- Service type. ClusterIP is typically sufficient.
-  type: ClusterIP
-  # -- Port on which the exporter service is exposed.
-  port: 9876
-  # -- Target port on the exporter pod.
-  targetPort: 9876
+  main: # A key for the service, 'main' is a common convention.
+    # -- Enable the exporter service.
+    enabled: true
+    # -- Service type.
+    type: ClusterIP # ClusterIP is typical for internal services scraped by Prometheus.
+    # -- Ports configuration for the service.
+    ports:
+      metrics: # Name of the service port, should align with a container port name.
+        # -- Port number on which the service is exposed.
+        port: 9876
+        # -- Target port on the exporter pod. Can be a number or name.
+        # Refers to the 'metrics' port defined in controllers.exporter.containers.exporter.ports.
+        targetPort: metrics
+        protocol: TCP
 
-# -- Optional configuration for a network policy to allow traffic to the iperf3 server DaemonSet.
-# This is often necessary if you are using a network policy controller.
+# Network Policy (optional)
 networkPolicy:
   # -- If true, create a NetworkPolicy resource.
   enabled: false
-  # -- Specify source selectors if needed (e.g., pods in a specific namespace).
+  # -- Source selectors for ingress rules.
   from: []
-  # -- Specify namespace selectors if needed.
+  # -- Namespace selectors for ingress rules.
   namespaceSelector: {}
-  # -- Specify pod selectors if needed.
+  # -- Pod selectors for ingress rules.
   podSelector: {}
 
-# -----------------------------------------------------------------------------
-# Dependency Configuration
-# -----------------------------------------------------------------------------
+# Dependency Configuration (for Prometheus Operator)
 dependencies:
-  # -- Set to true to install Prometheus operator dependency if serviceMonitor.enabled is also true.
-  # -- Set to false to disable the installation of Prometheus operator dependency,
-  # -- regardless of serviceMonitor.enabled. This is useful if you have Prometheus
-  # -- Operator installed and managed separately in your cluster.
+  # -- If true, install Prometheus operator dependency (used if serviceMonitor.enabled=true).
   install: true
-
-  # -- Set to true to use the TrueCharts Prometheus Operator instead of kube-prometheus-stack.
-  # This chart's ServiceMonitor resources require a Prometheus Operator to be functional.
-  # If serviceMonitor.enabled is true and dependencies.install is true,
-  # one of these two dependencies will be pulled based on this flag.
+  # -- If true, use TrueCharts Prometheus Operator instead of kube-prometheus-stack.
   useTrueChartsPrometheusOperator: false

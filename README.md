@@ -74,37 +74,123 @@ nameOverride: ""
 # -- Override the fully qualified app name.
 fullnameOverride: ""
 
-exporter:
-  # -- Configuration for the exporter container image.
-  image:
-    # -- The container image repository for the exporter.
-    repository: ghcr.io/malarinv/iperf3-monitor
-    # -- The container image tag for the exporter. If not set, the chart's appVersion is used.
-    tag: ""
-    # -- The image pull policy for the exporter container.
-    pullPolicy: IfNotPresent
+# Exporter Configuration (`controllers.exporter`)
+# The iperf3 exporter is managed under the `controllers.exporter` section,
+# leveraging the `bjw-s/common-library` for robust workload management.
+controllers:
+  exporter:
+    # -- Enable the exporter controller.
+    enabled: true
+    # -- Set the controller type for the exporter.
+    # Valid options are "deployment" or "daemonset".
+    # Use "daemonset" for N-to-N node monitoring where an exporter runs on each node (or selected nodes).
+    # Use "deployment" for a centralized exporter (typically with replicaCount: 1).
+    # @default -- "deployment"
+    type: deployment
+    # -- Number of desired exporter pods. Only used if type is "deployment".
+    # @default -- 1
+    replicas: 1
 
-  # -- Number of exporter pod replicas. Typically 1 is sufficient.
-  replicaCount: 1
+    # -- Application-specific configuration for the iperf3 exporter.
+    # These values are used to populate environment variables for the exporter container.
+    appConfig:
+      # -- Interval in seconds between complete test cycles (i.e., testing all server nodes).
+      testInterval: 300
+      # -- Log level for the iperf3 exporter (e.g., DEBUG, INFO, WARNING, ERROR, CRITICAL).
+      logLevel: INFO
+      # -- Timeout in seconds for a single iperf3 test run.
+      testTimeout: 10
+      # -- Protocol to use for testing (tcp or udp).
+      testProtocol: tcp
+      # -- iperf3 server port to connect to. Should match the server's listening port.
+      serverPort: "5201"
+      # -- Label selector to find iperf3 server pods.
+      # This is templated. Default: 'app.kubernetes.io/name=<chart-name>,app.kubernetes.io/instance=<release-name>,app.kubernetes.io/component=server'
+      serverLabelSelector: 'app.kubernetes.io/name={{ include "iperf3-monitor.name" . }},app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=server'
 
-  # -- Interval in seconds between complete test cycles (i.e., testing all server nodes).
-  testInterval: 300
+    # -- Pod-level configurations for the exporter.
+    pod:
+      # -- Annotations for the exporter pod.
+      annotations: {}
+      # -- Labels for the exporter pod (the common library adds its own defaults too).
+      labels: {}
+      # -- Node selector for scheduling exporter pods. Useful for DaemonSet or specific scheduling with Deployments.
+      # Example:
+      # nodeSelector:
+      #   kubernetes.io/os: linux
+      nodeSelector: {}
+      # -- Tolerations for scheduling exporter pods.
+      # Example:
+      # tolerations:
+      # - key: "node-role.kubernetes.io/control-plane"
+      #   operator: "Exists"
+      #   effect: "NoSchedule"
+      tolerations: []
+      # -- Affinity rules for scheduling exporter pods.
+      # Example:
+      # affinity:
+      #   nodeAffinity:
+      #     requiredDuringSchedulingIgnoredDuringExecution:
+      #       nodeSelectorTerms:
+      #       - matchExpressions:
+      #         - key: "kubernetes.io/arch"
+      #           operator: In
+      #           values:
+      #           - amd64
+      affinity: {}
+      # -- Security context for the exporter pod.
+      # securityContext:
+      #   fsGroup: 65534
+      #   runAsUser: 65534
+      #   runAsGroup: 65534
+      #   runAsNonRoot: true
+      securityContext: {}
+      # -- Automount service account token for the pod.
+      automountServiceAccountToken: true
 
-  # -- Timeout in seconds for a single iperf3 test run.
-  testTimeout: 10
-
-  # -- Protocol to use for testing (tcp or udp).
-  testProtocol: tcp
-
-  # -- CPU and memory resource requests and limits for the exporter pod.
-  # @default -- A small default is provided if commented out.
-  resources: {}
-    # requests:
-    #   cpu: "100m"
-    #   memory: "128Mi"
-    # limits:
-    #   cpu: "500m"
-    #   memory: "256Mi"
+    # -- Container-level configurations for the main exporter container.
+    containers:
+      exporter: # Name of the primary container
+        image:
+          repository: ghcr.io/malarinv/iperf3-monitor
+          tag: "" # Defaults to .Chart.AppVersion
+          pullPolicy: IfNotPresent
+        # -- Custom environment variables for the exporter container.
+        # These are merged with the ones generated from appConfig.
+        # env:
+        #   MY_CUSTOM_VAR: "my_value"
+        env: {}
+        # -- Ports for the exporter container.
+        ports:
+          metrics: # Name of the port
+            port: 9876 # Container port for metrics
+            protocol: TCP
+            enabled: true
+        # -- CPU and memory resource requests and limits.
+        # resources:
+        #   requests:
+        #     cpu: "100m"
+        #     memory: "128Mi"
+        #   limits:
+        #     cpu: "500m"
+        #     memory: "256Mi"
+        resources: {}
+        # -- Probes configuration for the exporter container.
+        # probes:
+        #   liveness:
+        #     enabled: true # Example: enable liveness probe
+        #     spec: # Customize probe spec if needed
+        #       initialDelaySeconds: 30
+        #       periodSeconds: 15
+        #       timeoutSeconds: 5
+        #       failureThreshold: 3
+        probes:
+          liveness:
+            enabled: false
+          readiness:
+            enabled: false
+          startup:
+            enabled: false
 
 server:
   # -- Configuration for the iperf3 server container image (DaemonSet).

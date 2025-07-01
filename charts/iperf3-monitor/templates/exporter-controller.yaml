@@ -1,0 +1,70 @@
+{{- /*
+Get the exporter controller configuration from values.
+We make a deep copy to be able to modify it locally for env vars and service account.
+*/}}
+{{- $exporterControllerConfig := deepCopy .Values.controllers.exporter -}}
+{{- $appName := include "iperf3-monitor.name" . -}}
+{{- $fullName := include "iperf3-monitor.fullname" . -}}
+{{- $chart := .Chart -}}
+{{- $release := .Release -}}
+{{- $values := .Values -}}
+
+{{- /*
+Construct the base environment variables for the exporter container.
+*/}}
+{{- $baseExporterEnv := dict -}}
+{{- $_ := set $baseExporterEnv "SOURCE_NODE_NAME" (dict "valueFrom" (dict "fieldRef" (dict "fieldPath" "spec.nodeName"))) -}}
+{{- $_ := set $baseExporterEnv "IPERF_TEST_INTERVAL" ($exporterControllerConfig.appConfig.testInterval | toString) -}}
+{{- $_ := set $baseExporterEnv "IPERF_TEST_PROTOCOL" $exporterControllerConfig.appConfig.testProtocol -}}
+{{- $_ := set $baseExporterEnv "LOG_LEVEL" $exporterControllerConfig.appConfig.logLevel -}}
+{{- $_ := set $baseExporterEnv "IPERF_SERVER_PORT" ($exporterControllerConfig.appConfig.serverPort | toString) -}}
+{{- $_ := set $baseExporterEnv "IPERF_SERVER_NAMESPACE" (dict "valueFrom" (dict "fieldRef" (dict "fieldPath" "metadata.namespace"))) -}}
+{{- $_ := set $baseExporterEnv "IPERF_TEST_TIMEOUT" ($exporterControllerConfig.appConfig.testTimeout | toString) -}}
+{{- $serverLabelSelector := tpl ($exporterControllerConfig.appConfig.serverLabelSelector | default (printf "app.kubernetes.io/name=%s,app.kubernetes.io/instance=%s,app.kubernetes.io/component=server" $appName $release.Name)) . -}}
+{{- $_ := set $baseExporterEnv "IPERF_SERVER_LABEL_SELECTOR" $serverLabelSelector -}}
+
+{{- /*
+Merge with any additional environment variables defined by the user
+under controllers.exporter.containers.exporter.env.
+User-defined values (from .Values.controllers.exporter.containers.exporter.env)
+will take precedence if keys conflict, achieved by merging them on top of base.
+*/}}
+{{- $userExporterEnv := $exporterControllerConfig.containers.exporter.env | default dict -}}
+{{- $finalExporterEnv := mergeOverwrite $baseExporterEnv $userExporterEnv -}}
+
+{{- /*
+Update the exporter container's env in our local copy of the controller config.
+The common library expects the env map under containers.<container_name>.env.
+The container name is assumed to be 'exporter' as per our values.yaml structure.
+*/}}
+{{- if not $exporterControllerConfig.containers.exporter -}}
+  {{- $_ := set $exporterControllerConfig.containers "exporter" dict -}}
+{{- end -}}
+{{- $_ := set $exporterControllerConfig.containers.exporter "env" $finalExporterEnv -}}
+
+{{- /*
+Configure Service Account for the exporter controller.
+It should use the SA name defined in .Values.serviceAccount.name, and its creation
+should be controlled by .Values.rbac.create.
+The common library helper "bjw-s.common.lib.controller.serviceAccountName" will use
+serviceAccount.name if serviceAccount.create is true.
+*/}}
+{{- $serviceAccountNameFromValues := .Values.serviceAccount.name | default (printf "%s-exporter" $fullName) -}}
+{{- if not $exporterControllerConfig.serviceAccount -}}
+  {{- $_ := set $exporterControllerConfig "serviceAccount" dict -}}
+{{- end -}}
+{{- $_ := set $exporterControllerConfig.serviceAccount "name" $serviceAccountNameFromValues -}}
+{{- $_ := set $exporterControllerConfig.serviceAccount "create" .Values.rbac.create -}}
+{{- $_ := set $exporterControllerConfig.serviceAccount "automountServiceAccountToken" true -}} {{/* Explicitly set, though often default */}}
+
+
+{{- /*
+Call the common library template to render the controller (Deployment or DaemonSet).
+Pass necessary context:
+- controller: our modified $exporterControllerConfig.
+- config: The top-level .Values.
+- chart: The .Chart object.
+- release: The .Release object.
+- name: The application name (used by library for defaults if needed).
+*/}}
+{{- include "bjw-s.common.lib.chart.controller" (dict "controller" $exporterControllerConfig "config" $values "chart" $chart "release" $release "name" $appName ) -}}
