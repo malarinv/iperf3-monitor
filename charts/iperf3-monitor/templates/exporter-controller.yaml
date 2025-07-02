@@ -124,6 +124,6 @@ Ensure defaultPodOptionsStrategy exists, as common lib expects it at the root of
 Call the common library's main render function for controllers.
 This function iterates through all controllers defined under $localValues.controllers
 (in our case, just "exporter") and renders them using their specified type and configuration.
-The context passed must mirror the global Helm context, including 'Values', 'Chart', 'Release', and 'Capabilities'.
+The context passed must mirror the global Helm context, including 'Values', 'Chart', 'Release', 'Capabilities', and 'Template'.
 */}}
-{{- include "bjw-s.common.render.controllers" (dict "Values" $localValues "Chart" $chart "Release" $release "Capabilities" .Capabilities) | nindent 0 -}}
+{{- include "bjw-s.common.render.controllers" (dict "Values" $localValues "Chart" $chart "Release" $release "Capabilities" .Capabilities "Template" .Template) | nindent 0 -}}
