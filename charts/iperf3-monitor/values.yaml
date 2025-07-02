@@ -198,7 +198,8 @@ networkPolicy:
 
 # Dependency Configuration (for Prometheus Operator)
 dependencies:
-  # -- If true, install Prometheus operator dependency (used if serviceMonitor.enabled=true).
-  install: true
-  # -- If true, use TrueCharts Prometheus Operator instead of kube-prometheus-stack.
+  # -- Set to false by default. Set to true to install a Prometheus operator dependency (used if serviceMonitor.enabled=true).
+  # -- If false (default), and serviceMonitor.enabled is true, you must have a compatible Prometheus Operator already running in your cluster.
+  install: false
+  # -- If true, use TrueCharts Prometheus Operator instead of kube-prometheus-stack (used if dependencies.install is true).
   useTrueChartsPrometheusOperator: false
