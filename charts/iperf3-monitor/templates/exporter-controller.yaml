@@ -45,7 +45,7 @@ Proceed with modifications only if the exporter controller is defined.
     {{- $_ := set $baseExporterEnv "IPERF_SERVER_NAMESPACE" (dict "valueFrom" (dict "fieldRef" (dict "fieldPath" "metadata.namespace"))) -}}
     {{- $_ := set $baseExporterEnv "IPERF_TEST_TIMEOUT" ($exporterControllerConfig.appConfig.testTimeout | default "10" | toString) -}}
     {{- $serverLabelSelectorDefault := printf "app.kubernetes.io/name=%s,app.kubernetes.io/instance=%s,app.kubernetes.io/component=server" $appName $release.Name -}}
-    {{- $serverLabelSelector := tpl ($exporterControllerConfig.appConfig.serverLabelSelector | default $serverLabelSelectorDefault) (dict "Release" $release "Chart" $chart "Values" $localValues) -}}
+    {{- $serverLabelSelector := tpl ($exporterControllerConfig.appConfig.serverLabelSelector | default $serverLabelSelectorDefault) . -}}
     {{- $_ := set $baseExporterEnv "IPERF_SERVER_LABEL_SELECTOR" $serverLabelSelector -}}
   {{- end -}}
 

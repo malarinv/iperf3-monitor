@@ -19,7 +19,16 @@ jobs:
       - name: Set up Helm
         uses: azure/setup-helm@v3
         with:
-          version: v3.10.0
+          version: v3.10.0 # Using a specific version, can be updated
+
+      - name: Add Helm repositories
+        run: |
+          helm repo add bjw-s https://bjw-s-labs.github.io/helm-charts/ --force-update
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
+          helm repo update
+
+      - name: Build Helm chart dependencies
+        run: helm dependency build ./charts/iperf3-monitor
 
       - name: Helm Lint
         run: helm lint ./charts/iperf3-monitor
