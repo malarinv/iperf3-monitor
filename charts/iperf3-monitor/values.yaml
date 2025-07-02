@@ -45,7 +45,8 @@ controllers:
       # -- Annotations for the exporter pod.
       annotations: {}
       # -- Labels for the exporter pod.
-      labels: {} # The common library will add its own default labels.
+      labels:
+        app.kubernetes.io/component: exporter # Ensure pods get the component label for service selection
       # -- Node selector for scheduling exporter pods.
       nodeSelector: {}
       # -- Tolerations for scheduling exporter pods.

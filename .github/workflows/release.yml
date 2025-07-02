@@ -63,6 +63,11 @@ jobs:
         uses: docker/metadata-action@v4
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            # This ensures that for a git tag like "v0.1.0",
+            # an image tag "0.1.0" is generated.
+            # It will also generate "latest" for the most recent semver tag.
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
