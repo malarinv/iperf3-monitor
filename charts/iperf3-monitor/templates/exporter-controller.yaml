@@ -72,12 +72,23 @@ Proceed with modifications only if the exporter controller is defined.
   {{- /*
   Ensure the container image tag is set, defaulting to Chart.AppVersion if empty,
   as the common library validation requires it during 'helm template'.
+
+  NOTE: BJW-S common library typically handles defaulting image.tag to Chart.appVersion
+  if image.tag is empty or null in values. The custom logic below prepending "v"
+  is specific to this chart and might be redundant if the common library's default
+  is preferred. For now, we keep it as it was the reason for previous errors if tag was not set.
+  However, if common library handles it, this block could be removed and image.tag in values.yaml set to "" or null.
+  Forcing the tag to be set (even if to chart.appVersion) ensures the common library doesn't complain.
+  The issue encountered during `helm template` earlier (empty output) was resolved by
+  explicitly setting the tag (e.g. via --set or by ensuring values.yaml has it).
+  The common library's internal validation likely needs *a* tag to be present in the values passed to it,
+  even if that tag is derived from AppVersion. This block ensures that.
   */}}
   {{- $exporterContainerCfg := get $exporterControllerConfig.containers "exporter" -}}
   {{- if $exporterContainerCfg -}}
     {{- if not $exporterContainerCfg.image.tag -}}
       {{- if $chart.AppVersion -}}
-        {{- $_ := set $exporterContainerCfg.image "tag" (printf "v%s" $chart.AppVersion) -}}
+        {{- $_ := set $exporterContainerCfg.image "tag" (printf "%s" $chart.AppVersion) -}} # Removed "v" prefix
       {{- else -}}
         {{- fail (printf "Error: Container image tag is not specified for controller '%s', container '%s', and Chart.AppVersion is also empty." $exporterControllerKey "exporter") -}}
       {{- end -}}

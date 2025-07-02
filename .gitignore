@@ -37,3 +37,7 @@ Thumbs.db
 # Helm
 !charts/iperf3-monitor/.helmignore
 charts/iperf3-monitor/charts/
+
+# Rendered Kubernetes manifests (for local testing)
+rendered-manifests.yaml
+rendered-manifests-updated.yaml
