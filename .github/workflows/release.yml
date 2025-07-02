@@ -22,6 +22,15 @@ jobs:
         with:
           version: v3.10.0
 
+      - name: Add Helm repositories
+        run: |
+          helm repo add bjw-s https://bjw-s-labs.github.io/helm-charts/ --force-update
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
+          helm repo update
+
+      - name: Build Helm chart dependencies
+        run: helm dependency build ./charts/iperf3-monitor
+
       - name: Helm Lint
         run: helm lint ./charts/iperf3-monitor
 
@@ -85,6 +94,15 @@ jobs:
         run: |
           sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq &&\
           sudo chmod +x /usr/bin/yq
+
+      - name: Add Helm repositories
+        run: |
+          helm repo add bjw-s https://bjw-s-labs.github.io/helm-charts/ --force-update
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
+          helm repo update
+
+      - name: Build Helm chart dependencies
+        run: helm dependency build ./charts/iperf3-monitor
 
       - name: Set Chart Version from Tag
         run: |
