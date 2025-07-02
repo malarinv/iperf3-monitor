@@ -86,13 +86,15 @@ controllers:
           #       key: mykey
 
         # -- Ports for the exporter container.
+        # Expected by Kubernetes and bjw-s common library as a list of objects.
         ports:
-          metrics: # Name of the port, will be used in Service definition
+          - name: metrics # Name of the port, referenced by Service's targetPort
             # -- Port number for the metrics endpoint on the container.
-            port: 9876 # Default, should match service.targetPort
+            containerPort: 9876
             # -- Protocol for the metrics port.
-            protocol: TCP # Common library defaults to TCP if not specified.
-            enabled: true # This port is enabled
+            protocol: TCP
+            # -- Whether this port definition is enabled. Specific to bjw-s common library.
+            enabled: true
 
         # -- CPU and memory resource requests and limits for the exporter container.
         resources:
