@@ -77,7 +77,7 @@ Proceed with modifications only if the exporter controller is defined.
   {{- if $exporterContainerCfg -}}
     {{- if not $exporterContainerCfg.image.tag -}}
       {{- if $chart.AppVersion -}}
-        {{- $_ := set $exporterContainerCfg.image "tag" $chart.AppVersion -}}
+        {{- $_ := set $exporterContainerCfg.image "tag" (printf "v%s" $chart.AppVersion) -}}
       {{- else -}}
         {{- fail (printf "Error: Container image tag is not specified for controller '%s', container '%s', and Chart.AppVersion is also empty." $exporterControllerKey "exporter") -}}
       {{- end -}}
