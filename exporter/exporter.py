@@ -92,16 +92,18 @@ def discover_iperf_servers():
 
         logging.info(f"Discovering iperf3 servers with label '{label_selector}' in namespace '{namespace}'")
 
-        ret = v1.list_pod_for_all_namespaces(label_selector=label_selector, watch=False)
+        # Use list_namespaced_pod to query only the specified namespace
+        ret = v1.list_namespaced_pod(namespace=namespace, label_selector=label_selector, watch=False)
 
         servers = []
         for item in ret.items:
+            # No need to filter by namespace here as the API call is already namespaced
             if item.status.pod_ip and item.status.phase == 'Running':
                 servers.append({
                     'ip': item.status.pod_ip,
                     'node_name': item.spec.node_name # Node where the iperf server pod is running
                 })
-        logging.info(f"Discovered {len(servers)} iperf3 server pods.")
+        logging.info(f"Discovered {len(servers)} iperf3 server pods in namespace '{namespace}'.")
         return servers
     except config.ConfigException as e:
         logging.error(f"Kubernetes config error: {e}. Is the exporter running in a cluster with RBAC permissions?")
