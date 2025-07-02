@@ -32,3 +32,6 @@ dependencies:
     version: ">=8.11.1"
     repository: "oci://tccr.io/truecharts"
     condition: "dependencies.install, serviceMonitor.enabled, dependencies.useTrueChartsPrometheusOperator"
+  - name: common
+    version: "4.1.2"
+    repository: "https://bjw-s-labs.github.io/helm-charts/"

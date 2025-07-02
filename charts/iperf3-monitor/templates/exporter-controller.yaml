@@ -1,0 +1,129 @@
+{{- /*
+This template is responsible for rendering the 'exporter' controller (Deployment or DaemonSet)
+by calling the bjw-s common library.
+
+The primary values for the exporter are expected under .Values.controllers.exporter.
+Modifications to environment variables and service account are handled here before
+passing the configuration to the common library.
+*/}}
+
+{{- /*
+Prepare a local, modifiable copy of the .Values. This allows us to adjust the
+exporter controller's configuration (like env vars and SA) specifically for this chart's needs
+before the common library processes it.
+Convert to map[string]interface{} via toYaml/fromYaml to ensure compatibility with 'dig'.
+*/}}
+{{- $localValues := .Values | toYaml | fromYaml | deepCopy -}}
+{{- $chart := .Chart -}}
+{{- $release := .Release -}}
+{{- $appName := include "iperf3-monitor.name" . -}}
+{{- $fullName := include "iperf3-monitor.fullname" . -}}
+
+{{- /*
+Define the key for the exporter controller, typically "exporter" as per our values.yaml.
+*/}}
+{{- $exporterControllerKey := "exporter" -}}
+
+{{- /*
+Attempt to get the exporter controller's configuration block.
+Proceed with modifications only if the exporter controller is defined.
+*/}}
+{{- $exporterControllerConfig := get $localValues.controllers $exporterControllerKey -}}
+{{- if $exporterControllerConfig -}}
+
+  {{- /*
+  Construct the base set of environment variables required by the iperf3-exporter application.
+  These are derived from the 'appConfig' section of the exporter's controller configuration.
+  */}}
+  {{- $baseExporterEnv := dict -}}
+  {{- if $exporterControllerConfig.appConfig -}}
+    {{- $_ := set $baseExporterEnv "SOURCE_NODE_NAME" (dict "valueFrom" (dict "fieldRef" (dict "fieldPath" "spec.nodeName"))) -}}
+    {{- $_ := set $baseExporterEnv "IPERF_TEST_INTERVAL" ($exporterControllerConfig.appConfig.testInterval | default "300" | toString) -}}
+    {{- $_ := set $baseExporterEnv "IPERF_TEST_PROTOCOL" ($exporterControllerConfig.appConfig.testProtocol | default "tcp") -}}
+    {{- $_ := set $baseExporterEnv "LOG_LEVEL" ($exporterControllerConfig.appConfig.logLevel | default "INFO") -}}
+    {{- $_ := set $baseExporterEnv "IPERF_SERVER_PORT" ($exporterControllerConfig.appConfig.serverPort | default "5201" | toString) -}}
+    {{- $_ := set $baseExporterEnv "IPERF_SERVER_NAMESPACE" (dict "valueFrom" (dict "fieldRef" (dict "fieldPath" "metadata.namespace"))) -}}
+    {{- $_ := set $baseExporterEnv "IPERF_TEST_TIMEOUT" ($exporterControllerConfig.appConfig.testTimeout | default "10" | toString) -}}
+    {{- $serverLabelSelectorDefault := printf "app.kubernetes.io/name=%s,app.kubernetes.io/instance=%s,app.kubernetes.io/component=server" $appName $release.Name -}}
+    {{- $serverLabelSelector := tpl ($exporterControllerConfig.appConfig.serverLabelSelector | default $serverLabelSelectorDefault) . -}}
+    {{- $_ := set $baseExporterEnv "IPERF_SERVER_LABEL_SELECTOR" $serverLabelSelector -}}
+  {{- end -}}
+
+  {{- /*
+  Merge the base environment variables with any user-defined environment variables.
+  User-defined variables (from .Values.controllers.exporter.containers.exporter.env)
+  will take precedence in case of conflicting keys.
+  */}}
+  {{- $userExporterEnv := $exporterControllerConfig.containers.exporter.env | default dict -}}
+  {{- $finalExporterEnv := mergeOverwrite $baseExporterEnv $userExporterEnv -}}
+
+  {{- /*
+  Ensure the container structure exists and update its 'env' field with the final set.
+  The common library expects this under controllers.<key>.containers.<containerName>.env
+  */}}
+  {{- if not $exporterControllerConfig.containers -}}
+    {{- $_ := set $exporterControllerConfig "containers" dict -}}
+  {{- end -}}
+  {{- if not $exporterControllerConfig.containers.exporter -}}
+    {{- $_ := set $exporterControllerConfig.containers "exporter" dict -}}
+  {{- end -}}
+  {{- $_ := set $exporterControllerConfig.containers.exporter "env" $finalExporterEnv -}}
+
+  {{- /*
+  Ensure the container image tag is set, defaulting to Chart.AppVersion if empty,
+  as the common library validation requires it during 'helm template'.
+  */}}
+  {{- $exporterContainerCfg := get $exporterControllerConfig.containers "exporter" -}}
+  {{- if $exporterContainerCfg -}}
+    {{- if not $exporterContainerCfg.image.tag -}}
+      {{- if $chart.AppVersion -}}
+        {{- $_ := set $exporterContainerCfg.image "tag" $chart.AppVersion -}}
+      {{- else -}}
+        {{- fail (printf "Error: Container image tag is not specified for controller '%s', container '%s', and Chart.AppVersion is also empty." $exporterControllerKey "exporter") -}}
+      {{- end -}}
+    {{- end -}}
+  {{- end -}}
+
+  {{- /*
+  Configure the Service Account for the exporter controller.
+  This ensures the controller pod uses the ServiceAccount that is intended by this chart's
+  RBAC configuration (.Values.rbac.create and .Values.serviceAccount.name).
+  */}}
+  {{- $serviceAccountNameFromValues := $localValues.serviceAccount.name | default (printf "%s-exporter" $fullName) -}}
+  {{- if not $exporterControllerConfig.serviceAccount -}}
+    {{- $_ := set $exporterControllerConfig "serviceAccount" dict -}}
+  {{- end -}}
+  {{- $_ := set $exporterControllerConfig.serviceAccount "name" $serviceAccountNameFromValues -}}
+  {{- $_ := set $exporterControllerConfig.serviceAccount "create" $localValues.rbac.create -}}
+  {{- $_ := set $exporterControllerConfig.serviceAccount "automountServiceAccountToken" ($exporterControllerConfig.pod.automountServiceAccountToken | default true) -}}
+
+  {{- /*
+  Replace the original exporter controller config in our $localValues copy
+  with the modified version (that now includes the correct env and SA settings).
+  */}}
+  {{- $_ := set $localValues.controllers $exporterControllerKey $exporterControllerConfig -}}
+{{- end -}}
+
+{{- /*
+Ensure .Values.global exists and is a map, as the common library expects it.
+*/}}
+{{- if not (get $localValues "global") -}}
+  {{- $_ := set $localValues "global" dict -}}
+{{- else if not (kindIs "map" (get $localValues "global")) -}}
+  {{- $_ := set $localValues "global" dict -}}
+{{- end -}}
+
+{{- /*
+Ensure defaultPodOptionsStrategy exists, as common lib expects it at the root of Values.
+*/}}
+{{- if not (get $localValues "defaultPodOptionsStrategy") -}}
+  {{- $_ := set $localValues "defaultPodOptionsStrategy" "overwrite" -}}
+{{- end -}}
+
+{{- /*
+Call the common library's main render function for controllers.
+This function iterates through all controllers defined under $localValues.controllers
+(in our case, just "exporter") and renders them using their specified type and configuration.
+The context passed must mirror the global Helm context, including 'Values', 'Chart', 'Release', 'Capabilities', and 'Template'.
+*/}}
+{{- include "bjw-s.common.render.controllers" (dict "Values" $localValues "Chart" $chart "Release" $release "Capabilities" .Capabilities "Template" .Template) | nindent 0 -}}
