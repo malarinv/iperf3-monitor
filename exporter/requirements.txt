@@ -1,3 +1,2 @@
-prometheus-client
-iperf3
-kubernetes
+prometheus-client>=0.20.0
+kubernetes>=29.0.0

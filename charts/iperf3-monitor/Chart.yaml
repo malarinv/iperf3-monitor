@@ -21,17 +21,20 @@ maintainers:
 icon: https://raw.githubusercontent.com/malarinv/iperf3-monitor/main/icon.png # Optional icon URL
 annotations:
   artifacthub.io/changes: |
-    - Add initial Helm chart structure.
+    - kind: changed
+      description: Refactor exporter to subprocess with active stall watchdog and connect-timeout
+    - kind: added
+      description: Expose TCP retransmits, mean RTT (ms), and cycle timestamp metrics
+    - kind: changed
+      description: Run exporter container as non-root on Python 3.12
+    - kind: fixed
+      description: Support testDuration, connectTimeoutMs, and stallThresholdSeconds in Helm values
   artifacthub.io/category: networking
 dependencies:
   - name: kube-prometheus-stack # Example dependency if you package the whole stack
     version: ">=30.0.0" # Specify a compatible version range
     repository: https://prometheus-community.github.io/helm-charts
-    condition: "dependencies.install, serviceMonitor.enabled, !dependencies.useTrueChartsPrometheusOperator"
-  - name: prometheus-operator
-    version: ">=8.11.1"
-    repository: "oci://tccr.io/truecharts"
-    condition: "dependencies.install, serviceMonitor.enabled, dependencies.useTrueChartsPrometheusOperator"
+    condition: "dependencies.install, serviceMonitor.enabled"
   - name: common
     version: "4.1.2"
     repository: "https://bjw-s-labs.github.io/helm-charts/"

@@ -1,0 +1,17 @@
+[tools]
+python = "3.12"
+uv = "latest"
+helm = "3.17.3"
+yq = "latest"
+
+[tasks.test]
+description = "Run exporter unit tests"
+run = "uv run --with-requirements exporter/requirements.txt python -m unittest discover -s exporter -p 'test_*.py'"
+
+[tasks."chart:build"]
+description = "Build Helm chart dependencies"
+run = "helm dependency build ./charts/iperf3-monitor"
+
+[tasks."chart:lint"]
+description = "Lint Helm chart"
+run = "helm lint ./charts/iperf3-monitor"
