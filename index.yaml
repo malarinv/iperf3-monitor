@@ -4,6 +4,51 @@ entries:
   - annotations:
       artifacthub.io/category: networking
       artifacthub.io/changes: |
+        - kind: changed
+          description: Refactor exporter to subprocess with active stall watchdog and connect-timeout
+        - kind: added
+          description: Expose TCP retransmits, mean RTT (ms), and cycle timestamp metrics
+        - kind: changed
+          description: Run exporter container as non-root on Python 3.12
+        - kind: fixed
+          description: Support testDuration, connectTimeoutMs, and stallThresholdSeconds in Helm values
+    apiVersion: v2
+    appVersion: 0.2.6
+    created: "2026-09-26T05:03:21.169108238Z"
+    dependencies:
+    - condition: dependencies.install, serviceMonitor.enabled
+      name: kube-prometheus-stack
+      repository: https://prometheus-community.github.io/helm-charts
+      version: '>=30.0.0'
+    - name: common
+      repository: https://bjw-s-labs.github.io/helm-charts/
+      version: 4.1.2
+    description: A Helm chart for deploying a Kubernetes-native iperf3 network performance
+      monitoring service with Prometheus and Grafana.
+    digest: 9401f12a41a6cb27f0ce136a1c694582275f9ee9673710e6d0e83da901e9f61e
+    home: https://github.com/malarinv/iperf3-monitor
+    icon: https://raw.githubusercontent.com/malarinv/iperf3-monitor/main/icon.png
+    keywords:
+    - iperf3
+    - network
+    - performance
+    - monitoring
+    - kubernetes
+    - prometheus
+    - grafana
+    maintainers:
+    - email: malarkannan.invention@gmail.com
+      name: Malar Invention
+    name: iperf3-monitor
+    sources:
+    - https://github.com/malarinv/iperf3-monitor
+    type: application
+    urls:
+    - https://malarinv.github.io/iperf3-monitor/iperf3-monitor-0.2.6.tgz
+    version: 0.2.6
+  - annotations:
+      artifacthub.io/category: networking
+      artifacthub.io/changes: |
         - Add initial Helm chart structure.
     apiVersion: v2
     appVersion: 0.2.5
@@ -441,4 +486,4 @@ entries:
     urls:
     - https://malarinv.github.io/iperf3-monitor/iperf3-monitor-0.1.1.tgz
     version: 0.1.1
-generated: "2025-07-02T11:03:52.94918383Z"
+generated: "2026-09-26T05:03:21.131001085Z"
