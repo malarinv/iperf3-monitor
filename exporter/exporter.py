@@ -4,24 +4,20 @@ Prometheus exporter for iperf3 network performance monitoring.
 This script runs iperf3 tests between the node it's running on (source) and
 other iperf3 server pods discovered in a Kubernetes cluster. It then exposes
 these metrics for Prometheus consumption.
-
-Configuration is primarily through environment variables and command-line arguments
-for log level.
 """
 import os
+import sys
 import time
+import json
+import signal
 import logging
 import argparse
-import sys
+import subprocess
 from kubernetes import client, config
 from prometheus_client import start_http_server, Gauge
-import iperf3
 
 # --- Global Configuration & Setup ---
 
-# Argument parsing for log level configuration
-# The command-line --log-level argument takes precedence over the LOG_LEVEL env var.
-# Defaults to INFO if neither is set.
 parser = argparse.ArgumentParser(description="iperf3 Prometheus exporter.")
 parser.add_argument(
     '--log-level',
@@ -29,19 +25,16 @@ parser.add_argument(
     choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
     help='Set the logging level. Overrides LOG_LEVEL environment variable. (Default: INFO)'
 )
-args = parser.parse_args()
+args, _ = parser.parse_known_args()
 log_level_str = args.log_level
 
-# Convert log level string (e.g., 'INFO') to its numeric representation (e.g., logging.INFO)
 numeric_level = getattr(logging, log_level_str.upper(), None)
 if not isinstance(numeric_level, int):
-    # This case should ideally not be reached if choices in argparse are respected.
     logging.error(f"Invalid log level: {log_level_str}. Defaulting to INFO.")
     numeric_level = logging.INFO
 logging.basicConfig(level=numeric_level, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- Prometheus Metrics Definition ---
-# These gauges will be used to expose iperf3 test results.
 IPERF_BANDWIDTH_MBPS = Gauge(
     'iperf_network_bandwidth_mbps',
     'Network bandwidth measured by iperf3 in Megabits per second (Mbps)',
@@ -67,24 +60,61 @@ IPERF_TEST_SUCCESS = Gauge(
     'Indicates if the iperf3 test was successful (1) or failed (0)',
     ['source_node', 'destination_node', 'protocol']
 )
+IPERF_TCP_RETRANSMITS = Gauge(
+    'iperf_network_tcp_retransmits_total',
+    'Total TCP retransmits measured by iperf3 during the test',
+    ['source_node', 'destination_node', 'protocol']
+)
+IPERF_TCP_RTT_MS = Gauge(
+    'iperf_network_tcp_rtt_ms',
+    'Mean TCP round-trip time in milliseconds (ms) measured by iperf3',
+    ['source_node', 'destination_node', 'protocol']
+)
+IPERF_TEST_DURATION_SECONDS = Gauge(
+    'iperf_network_test_duration_seconds',
+    'Duration of the iperf3 test in seconds',
+    ['source_node', 'destination_node', 'protocol']
+)
+IPERF_LAST_TEST_TIMESTAMP_SECONDS = Gauge(
+    'iperf_exporter_last_success_timestamp_seconds',
+    'Unix timestamp of the last completed test cycle',
+    ['source_node']
+)
+IPERF_SERVERS_DISCOVERED = Gauge(
+    'iperf_exporter_servers_discovered',
+    'Number of target iperf3 servers discovered in the cluster',
+    ['source_node']
+)
 
-def discover_iperf_servers():
+# --- Graceful Shutdown & Exceptions ---
+shutdown_requested = False
+active_subprocess = None
+
+def signal_handler(signum, frame):
+    global shutdown_requested, active_subprocess
+    logging.info(f"Received signal {signum}. Initiating graceful shutdown...")
+    shutdown_requested = True
+    if active_subprocess and active_subprocess.poll() is None:
+        try:
+            active_subprocess.kill()
+        except Exception:
+            pass
+
+class IperfStallException(Exception):
+    """Raised when an iperf3 test experiences a silent or busy-wait stall."""
+    pass
+
+class IperfTimeoutException(Exception):
+    """Raised when an iperf3 test exceeds its maximum expected deadline."""
+    pass
+
+# --- Kubernetes Discovery ---
+def discover_iperf_servers(source_node_name):
     """
     Discovers iperf3 server pods within a Kubernetes cluster.
-
-    It uses the in-cluster Kubernetes configuration to connect to the API.
-    The target namespace and label selector for iperf3 server pods are configured
-    via environment variables:
-    - IPERF_SERVER_NAMESPACE (default: 'default')
-    - IPERF_SERVER_LABEL_SELECTOR (default: 'app=iperf3-server')
-
-    Returns:
-        list: A list of dictionaries, where each dictionary contains the 'ip'
-              and 'node_name' of a discovered iperf3 server pod. Returns an
-              empty list if discovery fails or no servers are found.
     """
     try:
-        config.load_incluster_config() # Assumes running inside a Kubernetes pod
+        config.load_incluster_config()
         v1 = client.CoreV1Api()
 
         namespace = os.getenv('IPERF_SERVER_NAMESPACE', 'default')
@@ -92,208 +122,317 @@ def discover_iperf_servers():
 
         logging.info(f"Discovering iperf3 servers with label '{label_selector}' in namespace '{namespace}'")
 
-        # Use list_namespaced_pod to query only the specified namespace
         ret = v1.list_namespaced_pod(namespace=namespace, label_selector=label_selector, watch=False)
 
         servers = []
         for item in ret.items:
-            # No need to filter by namespace here as the API call is already namespaced
             if item.status.pod_ip and item.status.phase == 'Running':
                 servers.append({
                     'ip': item.status.pod_ip,
-                    'node_name': item.spec.node_name # Node where the iperf server pod is running
+                    'node_name': item.spec.node_name
                 })
         logging.info(f"Discovered {len(servers)} iperf3 server pods in namespace '{namespace}'.")
+        IPERF_SERVERS_DISCOVERED.labels(source_node=source_node_name).set(len(servers))
         return servers
     except config.ConfigException as e:
         logging.error(f"Kubernetes config error: {e}. Is the exporter running in a cluster with RBAC permissions?")
         return []
     except Exception as e:
         logging.error(f"Error discovering iperf servers: {e}")
-        return [] # Return empty list on error to avoid crashing the main loop
+        return []
 
-def run_iperf_test(server_ip, server_port, protocol, source_node_name, dest_node_name):
+# --- iperf3 Subprocess Execution with Stall Detection ---
+def execute_iperf_test(server_ip, server_port, protocol, duration, connect_timeout_ms, stall_threshold_sec):
     """
-    Runs a single iperf3 test against a specified server and publishes metrics.
-
-    Args:
-        server_ip (str): The IP address of the iperf3 server.
-        server_port (int): The port number of the iperf3 server.
-        protocol (str): The protocol to use ('tcp' or 'udp').
-        source_node_name (str): The name of the source node (where this exporter is running).
-        dest_node_name (str): The name of the destination node (where the server is running).
-
-    The test duration is controlled by the IPERF_TEST_DURATION environment variable
-    (default: 5 seconds).
+    Executes the iperf3 CLI in a subprocess with JSON output and active stall detection.
     """
-    logging.info(f"Running iperf3 {protocol.upper()} test from {source_node_name} to {dest_node_name} ({server_ip}:{server_port})")
+    global active_subprocess
 
-    iperf_client = iperf3.Client()
-    iperf_client.server_hostname = server_ip
-    iperf_client.port = server_port
-    iperf_client.protocol = protocol
-    iperf_client.duration = int(os.getenv('IPERF_TEST_DURATION', 5)) # Test duration in seconds
-    iperf_client.json_output = True # Enables easy parsing of results
+    cmd = [
+        "iperf3",
+        "-c", server_ip,
+        "-p", str(server_port),
+        "-t", str(duration),
+        "--connect-timeout", str(connect_timeout_ms),
+        "-J",
+    ]
+    if protocol == 'udp':
+        cmd.append("-u")
+
+    logging.debug(f"Executing: {' '.join(cmd)}")
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    active_subprocess = proc
+
+    start_time = time.monotonic()
+    # Maximum deadline: connect timeout + duration + stall threshold buffer
+    connect_timeout_sec = connect_timeout_ms / 1000.0
+    max_deadline = start_time + connect_timeout_sec + duration + stall_threshold_sec
+
+    last_io_change = start_time
+    last_wchar = 0
+    test_transfer_detected = False
 
     try:
-        result = iperf_client.run()
-        parse_and_publish_metrics(result, source_node_name, dest_node_name, protocol)
-    except Exception as e:
-        # Catch unexpected errors during client.run() or parsing
-        logging.error(f"Exception during iperf3 test or metric parsing for {dest_node_name}: {e}")
-        labels = {'source_node': source_node_name, 'destination_node': dest_node_name, 'protocol': protocol}
-        IPERF_TEST_SUCCESS.labels(**labels).set(0)
+        while proc.poll() is None:
+            if shutdown_requested:
+                proc.kill()
+                proc.wait()
+                raise KeyboardInterrupt("Shutdown requested")
+
+            now = time.monotonic()
+            if now > max_deadline:
+                proc.kill()
+                proc.wait()
+                raise IperfTimeoutException(f"iperf3 test exceeded absolute deadline of {max_deadline - start_time:.1f}s")
+
+            time.sleep(0.5)
+
+            # Check I/O progress via /proc/<pid>/io to detect busy-spin without I/O
+            try:
+                with open(f"/proc/{proc.pid}/io", "r") as f:
+                    for line in f:
+                        if line.startswith("wchar:"):
+                            wchar = int(line.split()[1])
+                            if wchar > last_wchar:
+                                last_wchar = wchar
+                                last_io_change = now
+                                test_transfer_detected = True
+                            break
+            except (FileNotFoundError, ProcessLookupError, PermissionError):
+                pass
+
+            # If traffic was active and has now completely ceased progressing for >= stall_threshold_sec
+            if test_transfer_detected and (now - last_io_change) >= stall_threshold_sec:
+                proc.kill()
+                proc.wait()
+                raise IperfStallException(f"iperf3 stalled: data transfer ceased for {now - last_io_change:.1f}s")
+
+        stdout, stderr = proc.communicate()
+        return proc.returncode, stdout, stderr
+    finally:
+        active_subprocess = None
+
+# --- Metric Reset Helper ---
+def reset_failure_metrics(labels):
+    IPERF_TEST_SUCCESS.labels(**labels).set(0)
+    for g in (
+        IPERF_BANDWIDTH_MBPS,
+        IPERF_JITTER_MS,
+        IPERF_PACKETS_TOTAL,
+        IPERF_LOST_PACKETS,
+        IPERF_TCP_RETRANSMITS,
+        IPERF_TCP_RTT_MS,
+        IPERF_TEST_DURATION_SECONDS,
+    ):
         try:
-            IPERF_BANDWIDTH_MBPS.labels(**labels).set(0)
-            IPERF_JITTER_MS.labels(**labels).set(0)
-            IPERF_PACKETS_TOTAL.labels(**labels).set(0)
-            IPERF_LOST_PACKETS.labels(**labels).set(0)
+            g.labels(**labels).set(0)
         except KeyError:
-            logging.debug(f"KeyError setting failure metrics for {labels} after client.run() exception.")
+            pass
 
-
-def parse_and_publish_metrics(result, source_node, dest_node, protocol):
+# --- Metric Parsing ---
+def parse_and_publish_metrics(data, source_node, dest_node, protocol):
     """
-    Parses the iperf3 test result and updates Prometheus gauges.
-
-    Args:
-        result (iperf3.TestResult): The result object from the iperf3 client.
-        source_node (str): Name of the source node.
-        dest_node (str): Name of the destination node.
-        protocol (str): Protocol used for the test ('tcp' or 'udp').
+    Parses iperf3 JSON result and updates Prometheus gauges.
     """
     labels = {'source_node': source_node, 'destination_node': dest_node, 'protocol': protocol}
 
-    # Handle failed tests (e.g., server unreachable) or missing result object
-    if not result or result.error:
-        error_message = result.error if result and result.error else "No result object from iperf3 client"
-        logging.warning(f"Test from {source_node} to {dest_node} ({protocol.upper()}) failed: {error_message}")
-        IPERF_TEST_SUCCESS.labels(**labels).set(0)
-        # Set all relevant metrics to 0 on failure to clear stale values from previous successes
-        try:
-            IPERF_BANDWIDTH_MBPS.labels(**labels).set(0)
-            IPERF_JITTER_MS.labels(**labels).set(0) # Applicable for UDP, zeroed for TCP later
-            IPERF_PACKETS_TOTAL.labels(**labels).set(0) # Applicable for UDP, zeroed for TCP later
-            IPERF_LOST_PACKETS.labels(**labels).set(0) # Applicable for UDP, zeroed for TCP later
-        except KeyError:
-            # This can happen if labels were never registered due to continuous failures
-            logging.debug(f"KeyError when setting failure metrics for {labels}. Gauges might not be initialized.")
+    if not data or not isinstance(data, dict):
+        logging.warning(f"Test from {source_node} to {dest_node} ({protocol.upper()}) failed: empty or invalid result")
+        reset_failure_metrics(labels)
         return
 
-    # If we reach here, the test itself was successful in execution
+    if data.get("error"):
+        error_msg = data.get("error")
+        logging.warning(f"Test from {source_node} to {dest_node} ({protocol.upper()}) failed: {error_msg}")
+        reset_failure_metrics(labels)
+        return
+
+    end = data.get("end")
+    if not end or not isinstance(end, dict):
+        logging.warning(f"Test from {source_node} to {dest_node} ({protocol.upper()}) failed: missing 'end' summary in JSON")
+        reset_failure_metrics(labels)
+        return
+
+    # Successful test execution
     IPERF_TEST_SUCCESS.labels(**labels).set(1)
 
-    # Determine bandwidth:
-    # Order of preference: received_Mbps, sent_Mbps, Mbps, then JSON fallbacks.
-    # received_Mbps is often most relevant for TCP client perspective.
-    # sent_Mbps can be relevant for UDP or as a TCP fallback.
-    bandwidth_mbps = 0
-    if hasattr(result, 'received_Mbps') and result.received_Mbps is not None:
-        bandwidth_mbps = result.received_Mbps
-    elif hasattr(result, 'sent_Mbps') and result.sent_Mbps is not None:
-        bandwidth_mbps = result.sent_Mbps
-    elif hasattr(result, 'Mbps') and result.Mbps is not None: # General attribute from iperf3 library
-        bandwidth_mbps = result.Mbps
-    # Fallback to raw JSON if direct attributes are None or missing
-    elif result.json:
-        # Prefer received sum, then sent sum from the JSON output's 'end' summary
-        if 'end' in result.json and 'sum_received' in result.json['end'] and \
-           result.json['end']['sum_received'].get('bits_per_second') is not None:
-            bandwidth_mbps = result.json['end']['sum_received']['bits_per_second'] / 1000000.0
-        elif 'end' in result.json and 'sum_sent' in result.json['end'] and \
-             result.json['end']['sum_sent'].get('bits_per_second') is not None:
-            bandwidth_mbps = result.json['end']['sum_sent']['bits_per_second'] / 1000000.0
+    sum_received = end.get("sum_received") or {}
+    sum_sent = end.get("sum_sent") or {}
+    sum_udp = end.get("sum") or {}
+
+    bandwidth_mbps = 0.0
+
+    if protocol == 'tcp':
+        if "bits_per_second" in sum_received and sum_received["bits_per_second"] is not None:
+            bandwidth_mbps = sum_received["bits_per_second"] / 1_000_000.0
+        elif "bits_per_second" in sum_sent and sum_sent["bits_per_second"] is not None:
+            bandwidth_mbps = sum_sent["bits_per_second"] / 1_000_000.0
+
+        # TCP Retransmits
+        retransmits = sum_sent.get("retransmits", 0)
+        IPERF_TCP_RETRANSMITS.labels(**labels).set(retransmits)
+
+        # TCP RTT
+        mean_rtt_us = 0.0
+        streams = end.get("streams", [])
+        if streams and isinstance(streams, list):
+            sender_info = streams[0].get("sender", {})
+            mean_rtt_us = sender_info.get("mean_rtt", sender_info.get("rtt", 0.0))
+        IPERF_TCP_RTT_MS.labels(**labels).set(mean_rtt_us / 1000.0)
+
+        # Zero out UDP-specific gauges
+        IPERF_JITTER_MS.labels(**labels).set(0)
+        IPERF_PACKETS_TOTAL.labels(**labels).set(0)
+        IPERF_LOST_PACKETS.labels(**labels).set(0)
+
+        # Test duration
+        test_seconds = sum_received.get("seconds", sum_sent.get("seconds", 0.0))
+        IPERF_TEST_DURATION_SECONDS.labels(**labels).set(test_seconds)
+    else:
+        if "bits_per_second" in sum_udp and sum_udp["bits_per_second"] is not None:
+            bandwidth_mbps = sum_udp["bits_per_second"] / 1_000_000.0
+        elif "bits_per_second" in sum_sent and sum_sent["bits_per_second"] is not None:
+            bandwidth_mbps = sum_sent["bits_per_second"] / 1_000_000.0
+
+        IPERF_JITTER_MS.labels(**labels).set(sum_udp.get("jitter_ms", 0.0) or 0.0)
+        IPERF_PACKETS_TOTAL.labels(**labels).set(sum_udp.get("packets", 0) or 0)
+        IPERF_LOST_PACKETS.labels(**labels).set(sum_udp.get("lost_packets", 0) or 0)
+        IPERF_TCP_RETRANSMITS.labels(**labels).set(0)
+        IPERF_TCP_RTT_MS.labels(**labels).set(0)
+
+        test_seconds = sum_udp.get("seconds", 0.0)
+        IPERF_TEST_DURATION_SECONDS.labels(**labels).set(test_seconds)
 
     IPERF_BANDWIDTH_MBPS.labels(**labels).set(bandwidth_mbps)
 
-    # UDP specific metrics
-    if protocol == 'udp':
-        # These attributes are specific to UDP tests in iperf3
-        IPERF_JITTER_MS.labels(**labels).set(getattr(result, 'jitter_ms', 0) if result.jitter_ms is not None else 0)
-        IPERF_PACKETS_TOTAL.labels(**labels).set(getattr(result, 'packets', 0) if result.packets is not None else 0)
-        IPERF_LOST_PACKETS.labels(**labels).set(getattr(result, 'lost_packets', 0) if result.lost_packets is not None else 0)
-    else:
-        # For TCP tests, ensure UDP-specific metrics are set to 0
-        try:
-             IPERF_JITTER_MS.labels(**labels).set(0)
-             IPERF_PACKETS_TOTAL.labels(**labels).set(0)
-             IPERF_LOST_PACKETS.labels(**labels).set(0)
-        except KeyError:
-            # Can occur if labels not yet registered (e.g. first test is TCP)
-            logging.debug(f"KeyError for {labels} when zeroing UDP metrics for TCP test.")
-            pass
+# --- Test Execution Wrapper ---
+def run_iperf_test(server_ip, server_port, protocol, source_node_name, dest_node_name, duration, connect_timeout_ms, stall_threshold_sec):
+    """
+    Runs a single iperf3 test with stall monitoring and publishes metrics.
+    """
+    logging.info(f"Running iperf3 {protocol.upper()} test from {source_node_name} to {dest_node_name} ({server_ip}:{server_port})")
+    labels = {'source_node': source_node_name, 'destination_node': dest_node_name, 'protocol': protocol}
 
+    try:
+        returncode, stdout, stderr = execute_iperf_test(
+            server_ip=server_ip,
+            server_port=server_port,
+            protocol=protocol,
+            duration=duration,
+            connect_timeout_ms=connect_timeout_ms,
+            stall_threshold_sec=stall_threshold_sec,
+        )
+
+        if not stdout.strip():
+            logging.warning(f"iperf3 produced no stdout for {dest_node_name}. Stderr: {stderr.strip()}")
+            reset_failure_metrics(labels)
+            return
+
+        try:
+            result_json = json.loads(stdout)
+        except json.JSONDecodeError as e:
+            logging.warning(f"Failed to parse iperf3 JSON output for {dest_node_name}: {e}. Output: {stdout[:200]}")
+            reset_failure_metrics(labels)
+            return
+
+        parse_and_publish_metrics(result_json, source_node_name, dest_node_name, protocol)
+    except IperfStallException as e:
+        logging.warning(f"Test from {source_node_name} to {dest_node_name} ({protocol.upper()}) aborted: {e}")
+        reset_failure_metrics(labels)
+    except IperfTimeoutException as e:
+        logging.warning(f"Test from {source_node_name} to {dest_node_name} ({protocol.upper()}) timed out: {e}")
+        reset_failure_metrics(labels)
+    except KeyboardInterrupt:
+        raise
+    except Exception as e:
+        logging.error(f"Unexpected exception during iperf3 test for {dest_node_name}: {e}")
+        reset_failure_metrics(labels)
+
+# --- Main Exporter Loop ---
 def main_loop():
     """
     Main operational loop of the iperf3 exporter.
-
-    This loop periodically:
-    1. Fetches configuration from environment variables:
-       - IPERF_TEST_INTERVAL (default: 300s): Time between test cycles.
-       - IPERF_SERVER_PORT (default: 5201): Port for iperf3 servers.
-       - IPERF_TEST_PROTOCOL (default: 'tcp'): 'tcp' or 'udp'.
-       - SOURCE_NODE_NAME (critical): Name of the node this exporter runs on.
-    2. Discovers iperf3 server pods in the Kubernetes cluster.
-    3. Runs iperf3 tests against each discovered server (unless it's on the same node).
-    4. Sleeps for the configured test interval.
-
-    If SOURCE_NODE_NAME is not set, the script will log an error and exit.
     """
-    # Fetch operational configuration from environment variables
     test_interval = int(os.getenv('IPERF_TEST_INTERVAL', 300))
     server_port = int(os.getenv('IPERF_SERVER_PORT', 5201))
-    protocol = os.getenv('IPERF_TEST_PROTOCOL', 'tcp').lower() # Ensure lowercase
+    protocol = os.getenv('IPERF_TEST_PROTOCOL', 'tcp').lower()
     source_node_name = os.getenv('SOURCE_NODE_NAME')
 
-    # SOURCE_NODE_NAME is crucial for labeling metrics correctly.
+    # Support either IPERF_TEST_DURATION or IPERF_TEST_TIMEOUT from Helm values
+    duration = int(os.getenv('IPERF_TEST_DURATION', os.getenv('IPERF_TEST_TIMEOUT', 5)))
+    connect_timeout_ms = int(os.getenv('IPERF_CONNECT_TIMEOUT_MS', 3000))
+    stall_threshold_sec = int(os.getenv('IPERF_STALL_THRESHOLD_SECONDS', 5))
+
     if not source_node_name:
         logging.error("CRITICAL: SOURCE_NODE_NAME environment variable not set. This is required. Exiting.")
         sys.exit(1)
 
     logging.info(
         f"Exporter configured. Source Node: {source_node_name}, "
-        f"Test Interval: {test_interval}s, Server Port: {server_port}, Protocol: {protocol.upper()}"
+        f"Test Interval: {test_interval}s, Duration: {duration}s, Server Port: {server_port}, Protocol: {protocol.upper()}, "
+        f"Connect Timeout: {connect_timeout_ms}ms, Stall Threshold: {stall_threshold_sec}s"
     )
 
-    while True:
+    while not shutdown_requested:
         logging.info("Starting new iperf test cycle...")
-        servers = discover_iperf_servers()
+        servers = discover_iperf_servers(source_node_name)
 
         if not servers:
             logging.warning("No iperf servers discovered in this cycle. Check K8s setup and RBAC permissions.")
         else:
             for server in servers:
-                dest_node_name = server.get('node_name', 'unknown_destination_node') # Default if key missing
+                if shutdown_requested:
+                    break
+
+                dest_node_name = server.get('node_name', 'unknown_destination_node')
                 server_ip = server.get('ip')
 
                 if not server_ip:
                     logging.warning(f"Discovered server entry missing an IP: {server}. Skipping.")
                     continue
 
-                # Avoid testing a node against itself
                 if dest_node_name == source_node_name:
                     logging.info(f"Skipping test to self: {source_node_name} to {server_ip} (on same node: {dest_node_name}).")
                     continue
 
-                run_iperf_test(server_ip, server_port, protocol, source_node_name, dest_node_name)
+                run_iperf_test(
+                    server_ip=server_ip,
+                    server_port=server_port,
+                    protocol=protocol,
+                    source_node_name=source_node_name,
+                    dest_node_name=dest_node_name,
+                    duration=duration,
+                    connect_timeout_ms=connect_timeout_ms,
+                    stall_threshold_sec=stall_threshold_sec,
+                )
 
-        logging.info(f"Test cycle completed. Sleeping for {test_interval} seconds.")
-        time.sleep(test_interval)
+        if not shutdown_requested:
+            IPERF_LAST_TEST_TIMESTAMP_SECONDS.labels(source_node=source_node_name).set(time.time())
+            logging.info(f"Test cycle completed. Sleeping for {test_interval} seconds.")
+            slept = 0
+            while slept < test_interval and not shutdown_requested:
+                time.sleep(1)
+                slept += 1
+
+    logging.info("Exporter main loop stopped gracefully.")
 
 if __name__ == '__main__':
-    # Initial logging (like log level) is configured globally at the start of the script.
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
 
-    # Fetch Prometheus exporter listen port from environment variable
     listen_port = int(os.getenv('LISTEN_PORT', 9876))
 
     try:
-        # Start the Prometheus HTTP server to expose metrics.
         start_http_server(listen_port)
         logging.info(f"Prometheus exporter listening on port {listen_port}")
     except Exception as e:
         logging.error(f"Failed to start Prometheus HTTP server on port {listen_port}: {e}")
-        sys.exit(1) # Exit if the metrics server cannot start
+        sys.exit(1)
 
-    # Enter the main operational loop.
-    # main_loop() contains its own critical checks (e.g., SOURCE_NODE_NAME) and will exit if necessary.
     main_loop()

@@ -17,6 +17,19 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v3
 
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r exporter/requirements.txt
+
+      - name: Run unit tests
+        run: |
+          python -m unittest exporter/test_exporter.py
+
       - name: Set up Helm
         uses: azure/setup-helm@v3
         with:
