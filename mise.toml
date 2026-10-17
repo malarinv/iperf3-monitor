@@ -1,8 +1,16 @@
+# Backends named and versions exact: `uv` and `yq` were `latest`, and `helm`
+# was a floating major-less spec that CI did not share — ci.yaml installs
+# v3.10.0 while this file declared 3.17.3, so local `mise run chart:lint` and
+# the pipeline that runs it were validating two different helm versions.
+#
+# `aqua:` for helm and yq, matching the other repos in this workspace. The
+# `github:` backend cannot name the yq binary `yq` at all on the mise version
+# this repo pins, and it mis-extracts helm 3.17.x.
 [tools]
-python = "3.12"
-uv = "latest"
-helm = "3.17.3"
-yq = "latest"
+"core:python" = "3.12"
+"aqua:astral-sh/uv" = "0.13.1"
+"aqua:helm/helm" = "3.17.3"
+"aqua:mikefarah/yq" = "4.54.1"
 
 [tasks.test]
 description = "Run exporter unit tests"
